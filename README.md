@@ -1,4 +1,4 @@
-# image_tagger
+# Trash Lens
 
 A new Flutter project.
 

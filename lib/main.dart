@@ -70,18 +70,18 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
   String _currentImageName = "";
   List<String> _failedImages = [];
 
-  // New notifier for progress updates.
+  // Notifiers for progress and logging.
   final ValueNotifier<double> _progressNotifier = ValueNotifier(0.0);
-
-  // Log management using ValueNotifiers.
   final ValueNotifier<List<String>> _logMessages = ValueNotifier([]);
   final ValueNotifier<String?> _finalStatusMessage = ValueNotifier(null);
   bool _isLogDialogOpen = false;
 
-  // Update these with your API base URL and endpoints.
-  static const String API_BASE_URL = "http://10.0.0.175:8000";
-  static const String PROCESS_API_URL = "$API_BASE_URL/process-image";
-  static const String SEARCH_API_URL = "$API_BASE_URL/search";
+  // Mutable API base URL; this is updated via the Settings page.
+  String _apiBaseUrl = "http://10.0.0.175:8000";
+
+  // Derived API endpoint URLs.
+  String get _processApiUrl => "$_apiBaseUrl/process-image";
+  String get _searchApiUrl => "$_apiBaseUrl/search";
 
   @override
   void initState() {
@@ -244,18 +244,17 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                           builder: (context, logs, child) {
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children:
-                                  logs
-                                      .map(
-                                        (log) => Text(
-                                          log,
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontFamily: 'Courier',
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
+                              children: logs
+                                  .map(
+                                    (log) => Text(
+                                      log,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontFamily: 'Courier',
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
                             );
                           },
                         ),
@@ -302,7 +301,7 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
     });
   }
 
-  /// Appends a log message to the terminal.
+  /// Appends a log message.
   void _appendLog(String message) {
     _logMessages.value = List.from(_logMessages.value)..add(message);
   }
@@ -318,13 +317,12 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Storage permission required"),
-          action:
-              _permissionPermanentlyDenied
-                  ? SnackBarAction(
-                    label: 'SETTINGS',
-                    onPressed: _openAppSettings,
-                  )
-                  : null,
+          action: _permissionPermanentlyDenied
+              ? SnackBarAction(
+                  label: 'SETTINGS',
+                  onPressed: _openAppSettings,
+                )
+              : null,
         ),
       );
       return;
@@ -457,26 +455,24 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
   Future<void> _deleteSelectedImages() async {
     final selectedItems = _images.where((img) => img.selected).toList();
     if (selectedItems.isEmpty) return;
-    bool confirmed =
-        await showDialog<bool>(
+    bool confirmed = await showDialog<bool>(
           context: context,
-          builder:
-              (context) => AlertDialog(
-                title: Text("Confirm Deletion"),
-                content: Text(
-                  "Are you sure you want to delete ${selectedItems.length} selected image(s)?",
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: Text("Cancel"),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: Text("Delete"),
-                  ),
-                ],
+          builder: (context) => AlertDialog(
+            title: Text("Confirm Deletion"),
+            content: Text(
+              "Are you sure you want to delete ${selectedItems.length} selected image(s)?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text("Cancel"),
               ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text("Delete"),
+              ),
+            ],
+          ),
         ) ??
         false;
     if (!confirmed) return;
@@ -518,7 +514,7 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
     try {
       _openLogDialog();
       _appendLog("Processing ${p.basename(image.file.path)}...");
-      var uri = Uri.parse(PROCESS_API_URL);
+      var uri = Uri.parse(_processApiUrl);
       var request = http.MultipartRequest('POST', uri);
       request.files.add(
         await http.MultipartFile.fromPath('image', image.file.path),
@@ -620,7 +616,7 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
         _isLoading = true;
       });
       final response = await http.post(
-        Uri.parse(SEARCH_API_URL),
+        Uri.parse(_searchApiUrl),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"query": _searchQuery}),
       );
@@ -628,19 +624,17 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
         final data = jsonDecode(response.body);
         final imagesData = data['images'] as List;
         setState(() {
-          _images =
-              imagesData.map<ImageItem>((img) {
-                final filePath = p.join(_currentDirectory!, img['path']);
-                return ImageItem(
-                  File(filePath),
-                  selected: false,
-                  isProcessed: img['is_processed'] ?? false,
-                  description: img['description'],
-                  tags:
-                      img['tags'] != null ? List<String>.from(img['tags']) : [],
-                  textContent: img['text_content'],
-                );
-              }).toList();
+          _images = imagesData.map<ImageItem>((img) {
+            final filePath = p.join(_currentDirectory!, img['path']);
+            return ImageItem(
+              File(filePath),
+              selected: false,
+              isProcessed: img['is_processed'] ?? false,
+              description: img['description'],
+              tags: img['tags'] != null ? List<String>.from(img['tags']) : [],
+              textContent: img['text_content'],
+            );
+          }).toList();
         });
         _appendLog(
           "SUCCESS: Search successful, found ${_images.length} image(s)",
@@ -657,6 +651,22 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
     }
   }
 
+  // Opens the Settings page.
+  Future<void> _openSettings() async {
+    final newUrl = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SettingsPage(apiBaseUrl: _apiBaseUrl),
+      ),
+    );
+    if (newUrl != null && newUrl is String) {
+      setState(() {
+        _apiBaseUrl = newUrl;
+      });
+      _appendLog("SUCCESS: API Base URL updated to $_apiBaseUrl");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -670,196 +680,310 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
           IconButton(icon: Icon(Icons.folder_open), onPressed: _pickFolder),
         ],
       ),
-      body:
-          _isLoading
-              ? Center(child: CircularProgressIndicator())
-              : _images.isEmpty
+      drawer: Drawer(
+        child: ListView(
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(color: Colors.indigo),
+              child: Text(
+                "Settings",
+                style: TextStyle(color: Colors.white, fontSize: 24),
+              ),
+            ),
+            ListTile(
+              leading: Icon(Icons.settings),
+              title: Text("API Settings"),
+              onTap: () {
+                Navigator.pop(context); // Close the drawer.
+                _openSettings();
+              },
+            ),
+          ],
+        ),
+      ),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator())
+          : _images.isEmpty
               ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.photo_library_outlined,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
-                    SizedBox(height: 16),
-                    Text(
-                      _currentDirectory == null
-                          ? "Select a folder to view images"
-                          : "No images found in this folder",
-                      style: TextStyle(fontSize: 18, color: Colors.grey[700]),
-                    ),
-                    SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      icon: Icon(Icons.folder_open),
-                      label: Text("Select Folder"),
-                      onPressed: _pickFolder,
-                    ),
-                    if (_permissionPermanentlyDenied) ...[
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.photo_library_outlined,
+                        size: 64,
+                        color: Colors.grey,
+                      ),
                       SizedBox(height: 16),
                       Text(
-                        "Storage permission was denied",
-                        style: TextStyle(color: Colors.red),
+                        _currentDirectory == null
+                            ? "Select a folder to view images"
+                            : "No images found in this folder",
+                        style:
+                            TextStyle(fontSize: 18, color: Colors.grey[700]),
                       ),
-                      TextButton(
-                        onPressed: _openAppSettings,
-                        child: Text("Open Settings"),
+                      SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        icon: Icon(Icons.folder_open),
+                        label: Text("Select Folder"),
+                        onPressed: _pickFolder,
                       ),
-                    ],
-                  ],
-                ),
-              )
-              : Column(
-                children: [
-                  // Top control area using Wrap for better responsiveness.
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Wrap(
-                      alignment: WrapAlignment.start,
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        // Search text field.
-                        Container(
-                          width: 200,
-                          child: TextField(
-                            decoration: InputDecoration(
-                              hintText: "Search images...",
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 10,
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey[100],
-                            ),
-                            onChanged: (value) {
-                              setState(() {
-                                _searchQuery = value;
-                              });
-                            },
-                          ),
+                      if (_permissionPermanentlyDenied) ...[
+                        SizedBox(height: 16),
+                        Text(
+                          "Storage permission was denied",
+                          style: TextStyle(color: Colors.red),
                         ),
-                        // Search button.
-                        ElevatedButton.icon(
-                          onPressed: _searchImages,
-                          icon: Icon(Icons.search),
-                          label: Text("Search"),
+                        TextButton(
+                          onPressed: _openAppSettings,
+                          child: Text("Open Settings"),
                         ),
-                        // Refresh button.
-                        ElevatedButton.icon(
-                          onPressed: _refreshImages,
-                          icon: Icon(Icons.refresh),
-                          label: Text("Refresh"),
-                        ),
-                        // Process All button.
-                        ElevatedButton.icon(
-                          onPressed: _processingAll ? null : _processAllImages,
-                          icon: Icon(Icons.flash_on),
-                          label: Text("Process All"),
-                        ),
-                        // Select All checkbox and label.
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Checkbox(
-                              value: _selectAll,
-                              onChanged: _toggleSelectAll,
-                            ),
-                            Text("Select All"),
-                          ],
-                        ),
-                        // Delete Selected button (shown if any images are selected).
-                        if (_images.any((img) => img.selected))
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent,
-                            ),
-                            onPressed: _deleteSelectedImages,
-                            icon: Icon(Icons.delete),
-                            label: Text(
-                              "Delete Selected (${_images.where((img) => img.selected).length})",
-                            ),
-                          ),
                       ],
-                    ),
+                    ],
                   ),
-                  // Image grid.
-                  Expanded(
-                    child: GridView.builder(
-                      padding: EdgeInsets.all(8),
-                      itemCount: _images.length,
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 4,
-                        mainAxisSpacing: 4,
-                      ),
-                      itemBuilder: (context, index) {
-                        final imageItem = _images[index];
-                        return Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: Image.file(
-                                imageItem.file,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    color: Colors.grey[300],
-                                    child: Icon(
-                                      Icons.broken_image,
-                                      color: Colors.red,
-                                    ),
-                                  );
-                                },
+                )
+              : Column(
+                  children: [
+                    // Top control area.
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Wrap(
+                        alignment: WrapAlignment.start,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          // Search text field.
+                          Container(
+                            width: 200,
+                            child: TextField(
+                              decoration: InputDecoration(
+                                hintText: "Search images...",
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 10,
+                                ),
+                                filled: true,
+                                fillColor: Colors.grey[100],
+                              ),
+                              onChanged: (value) {
+                                setState(() {
+                                  _searchQuery = value;
+                                });
+                              },
+                            ),
+                          ),
+                          // Search button.
+                          ElevatedButton.icon(
+                            onPressed: _searchImages,
+                            icon: Icon(Icons.search),
+                            label: Text("Search"),
+                          ),
+                          // Refresh button.
+                          ElevatedButton.icon(
+                            onPressed: _refreshImages,
+                            icon: Icon(Icons.refresh),
+                            label: Text("Refresh"),
+                          ),
+                          // Process All button.
+                          ElevatedButton.icon(
+                            onPressed:
+                                _processingAll ? null : _processAllImages,
+                            icon: Icon(Icons.flash_on),
+                            label: Text("Process All"),
+                          ),
+                          // Select All checkbox.
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Checkbox(
+                                value: _selectAll,
+                                onChanged: _toggleSelectAll,
+                              ),
+                              Text("Select All"),
+                            ],
+                          ),
+                          // Delete Selected button.
+                          if (_images.any((img) => img.selected))
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.redAccent,
+                              ),
+                              onPressed: _deleteSelectedImages,
+                              icon: Icon(Icons.delete),
+                              label: Text(
+                                "Delete Selected (${_images.where((img) => img.selected).length})",
                               ),
                             ),
-                            // Checkbox overlay.
-                            Positioned(
-                              top: 4,
-                              left: 4,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.black45,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Checkbox(
-                                  value: imageItem.selected,
-                                  onChanged: (value) {
-                                    int realIndex = _images.indexWhere(
-                                      (img) => p.equals(
-                                        img.file.path,
-                                        imageItem.file.path,
+                        ],
+                      ),
+                    ),
+                    // Image grid.
+                    Expanded(
+                      child: GridView.builder(
+                        padding: EdgeInsets.all(8),
+                        itemCount: _images.length,
+                        gridDelegate:
+                            SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 4,
+                          mainAxisSpacing: 4,
+                        ),
+                        itemBuilder: (context, index) {
+                          final imageItem = _images[index];
+                          return Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: Image.file(
+                                  imageItem.file,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      color: Colors.grey[300],
+                                      child: Icon(
+                                        Icons.broken_image,
+                                        color: Colors.red,
                                       ),
                                     );
-                                    _toggleImageSelection(realIndex, value);
                                   },
-                                  activeColor: Colors.blue,
-                                  checkColor: Colors.white,
                                 ),
                               ),
-                            ),
-                            // Processed indicator.
-                            if (imageItem.isProcessed)
+                              // Checkbox overlay.
                               Positioned(
-                                bottom: 4,
-                                right: 4,
-                                child: Icon(
-                                  Icons.check_circle,
-                                  color: Colors.green,
-                                  size: 20,
+                                top: 4,
+                                left: 4,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black45,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Checkbox(
+                                    value: imageItem.selected,
+                                    onChanged: (value) {
+                                      int realIndex = _images.indexWhere(
+                                        (img) => p.equals(
+                                          img.file.path,
+                                          imageItem.file.path,
+                                        ),
+                                      );
+                                      _toggleImageSelection(realIndex, value);
+                                    },
+                                    activeColor: Colors.blue,
+                                    checkColor: Colors.white,
+                                  ),
                                 ),
                               ),
-                          ],
-                        );
-                      },
+                              // Processed indicator.
+                              if (imageItem.isProcessed)
+                                Positioned(
+                                  bottom: 4,
+                                  right: 4,
+                                  child: Icon(
+                                    Icons.check_circle,
+                                    color: Colors.green,
+                                    size: 20,
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+    );
+  }
+}
+
+class SettingsPage extends StatefulWidget {
+  final String apiBaseUrl;
+  SettingsPage({required this.apiBaseUrl});
+
+  @override
+  _SettingsPageState createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late TextEditingController _controller;
+  bool _isTesting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.apiBaseUrl);
+  }
+
+  Future<void> _testApi() async {
+    setState(() {
+      _isTesting = true;
+    });
+    final url = _controller.text.trim();
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("API is working!")),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content:
+                  Text("API test failed with status: ${response.statusCode}")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("API test error: ${e.toString()}")),
+      );
+    } finally {
+      setState(() {
+        _isTesting = false;
+      });
+    }
+  }
+
+  void _saveSettings() {
+    Navigator.pop(context, _controller.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("API Settings"),
+      ),
+      body: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            TextField(
+              controller: _controller,
+              decoration: InputDecoration(
+                labelText: "API Base URL",
+                border: OutlineInputBorder(),
               ),
+            ),
+            SizedBox(height: 16),
+            Row(
+              children: [
+                ElevatedButton(
+                  onPressed: _isTesting ? null : _testApi,
+                  child: _isTesting
+                      ? CircularProgressIndicator()
+                      : Text("Test API"),
+                ),
+                SizedBox(width: 16),
+                ElevatedButton(
+                  onPressed: _saveSettings,
+                  child: Text("Save"),
+                ),
+              ],
+            )
+          ],
+        ),
+      ),
     );
   }
 }
