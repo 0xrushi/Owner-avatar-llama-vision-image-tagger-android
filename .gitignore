@@ -1,0 +1,24 @@
+# Flutter & Dart related
+.dart_tool/
+.packages
+.pub/
+build/
+
+# Android related
+android/.gradle/
+android/local.properties
+android/build/
+android/app/app.iml
+
+# Flutter generated files
+.flutter-plugins
+.flutter-plugins-dependencies
+.flutter-versions
+
+# IDE directories and files
+.vscode/
+.idea/
+windows
+macos
+ios
+linux
