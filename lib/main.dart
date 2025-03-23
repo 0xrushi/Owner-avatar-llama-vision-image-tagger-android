@@ -36,8 +36,13 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Image Folder Browser',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        primarySwatch: Colors.indigo,
         visualDensity: VisualDensity.adaptivePlatformDensity,
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+        ),
       ),
       home: ImageFolderScreen(),
     );
@@ -65,6 +70,9 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
   String _currentImageName = "";
   List<String> _failedImages = [];
 
+  // New notifier for progress updates.
+  final ValueNotifier<double> _progressNotifier = ValueNotifier(0.0);
+
   // Log management using ValueNotifiers.
   final ValueNotifier<List<String>> _logMessages = ValueNotifier([]);
   final ValueNotifier<String?> _finalStatusMessage = ValueNotifier(null);
@@ -81,10 +89,11 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
     _getAndroidVersion();
     _checkPermissions();
   }
-  
+
   Future<void> _getAndroidVersion() async {
     if (Platform.isAndroid) {
-      _androidVersion = int.tryParse(Platform.operatingSystemVersion.split(' ').last) ?? 0;
+      _androidVersion =
+          int.tryParse(Platform.operatingSystemVersion.split(' ').last) ?? 0;
     }
   }
 
@@ -137,25 +146,34 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       barrierDismissible: false, // force user to use close button
       builder: (BuildContext context) {
         return Dialog(
-          backgroundColor: Colors.black.withOpacity(0.85),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          backgroundColor: Colors.grey[900],
           insetPadding: EdgeInsets.all(16),
           child: Container(
             width: double.infinity,
-            height: 300,
+            height: 400,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Title bar with "Log" and close button.
+                // Header with title and close button.
                 Container(
-                  color: Colors.black87,
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(12),
+                    ),
+                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        "Log Terminal",
+                        "Processing Log",
                         style: TextStyle(
                           color: Colors.white,
-                          fontFamily: 'Courier',
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -169,21 +187,75 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                     ],
                   ),
                 ),
+                // Progress area.
+                if (_processingAll)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Processing: $_currentImageName",
+                          style: TextStyle(color: Colors.white70, fontSize: 16),
+                        ),
+                        SizedBox(height: 4),
+                        ValueListenableBuilder<double>(
+                          valueListenable: _progressNotifier,
+                          builder: (context, progress, child) {
+                            return LinearProgressIndicator(
+                              value: progress,
+                              backgroundColor: Colors.grey[700],
+                            );
+                          },
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          "$_processedCount / $_totalToProcess processed",
+                          style: TextStyle(color: Colors.white60),
+                        ),
+                        if (_failedImages.isNotEmpty)
+                          Text(
+                            "Failed: ${_failedImages.length}",
+                            style: TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 16,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 // Scrollable log messages.
                 Expanded(
                   child: Container(
-                    padding: EdgeInsets.all(8),
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.vertical(
+                        bottom: Radius.circular(12),
+                      ),
+                    ),
                     child: Scrollbar(
                       child: SingleChildScrollView(
                         child: ValueListenableBuilder<List<String>>(
                           valueListenable: _logMessages,
                           builder: (context, logs, child) {
-                            return Text(
-                              logs.join("\n"),
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontFamily: 'Courier',
-                              ),
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children:
+                                  logs
+                                      .map(
+                                        (log) => Text(
+                                          log,
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontFamily: 'Courier',
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
                             );
                           },
                         ),
@@ -194,18 +266,25 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                 // Final status message area.
                 Container(
                   width: double.infinity,
-                  padding: EdgeInsets.all(8),
-                  color: Colors.black54,
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(12),
+                    ),
+                  ),
                   child: ValueListenableBuilder<String?>(
                     valueListenable: _finalStatusMessage,
                     builder: (context, finalMsg, child) {
                       return Text(
                         finalMsg ?? "",
+                        textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: finalMsg != null && finalMsg.contains("ERROR")
-                              ? Colors.redAccent
-                              : Colors.greenAccent,
-                          fontFamily: 'Courier',
+                          color:
+                              finalMsg != null && finalMsg.contains("ERROR")
+                                  ? Colors.redAccent
+                                  : Colors.greenAccent,
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       );
@@ -239,12 +318,13 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Storage permission required"),
-          action: _permissionPermanentlyDenied 
-              ? SnackBarAction(
-                  label: 'SETTINGS',
-                  onPressed: _openAppSettings,
-                )
-              : null,
+          action:
+              _permissionPermanentlyDenied
+                  ? SnackBarAction(
+                    label: 'SETTINGS',
+                    onPressed: _openAppSettings,
+                  )
+                  : null,
         ),
       );
       return;
@@ -313,7 +393,11 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                     return ListTile(
                       leading: Icon(Icons.folder),
                       title: Text(displayName),
-                      subtitle: Text(dir.path, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                        dir.path,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       onTap: () {
                         Navigator.of(context).pop(dir);
                       },
@@ -373,24 +457,37 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
   Future<void> _deleteSelectedImages() async {
     final selectedItems = _images.where((img) => img.selected).toList();
     if (selectedItems.isEmpty) return;
-    bool confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text("Confirm Deletion"),
-        content: Text("Are you sure you want to delete ${selectedItems.length} selected image(s)?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text("Cancel")),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: Text("Delete")),
-        ],
-      ),
-    ) ?? false;
+    bool confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: Text("Confirm Deletion"),
+                content: Text(
+                  "Are you sure you want to delete ${selectedItems.length} selected image(s)?",
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: Text("Cancel"),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: Text("Delete"),
+                  ),
+                ],
+              ),
+        ) ??
+        false;
     if (!confirmed) return;
     for (var image in selectedItems) {
       try {
         await image.file.delete();
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to delete: ${p.basename(image.file.path)}")),
+          SnackBar(
+            content: Text("Failed to delete: ${p.basename(image.file.path)}"),
+          ),
         );
       }
     }
@@ -423,24 +520,33 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       _appendLog("Processing ${p.basename(image.file.path)}...");
       var uri = Uri.parse(PROCESS_API_URL);
       var request = http.MultipartRequest('POST', uri);
-      request.files.add(await http.MultipartFile.fromPath('image', image.file.path));
+      request.files.add(
+        await http.MultipartFile.fromPath('image', image.file.path),
+      );
       var streamedResponse = await request.send();
       if (streamedResponse.statusCode == 200) {
         final respStr = await streamedResponse.stream.bytesToString();
         final data = json.decode(respStr);
         setState(() {
           image.description = data['description'];
-          image.tags = data['tags'] != null ? List<String>.from(data['tags']) : [];
+          image.tags =
+              data['tags'] != null ? List<String>.from(data['tags']) : [];
           image.textContent = data['text_content'];
           image.isProcessed = data['is_processed'] ?? true;
         });
-        _appendLog("SUCCESS: Processed ${p.basename(image.file.path)} successfully");
+        _appendLog(
+          "SUCCESS: Processed ${p.basename(image.file.path)} successfully",
+        );
       } else {
-        throw Exception("Processing failed (status ${streamedResponse.statusCode})");
+        throw Exception(
+          "Processing failed (status ${streamedResponse.statusCode})",
+        );
       }
     } catch (e) {
       _appendLog("ERROR: ${p.basename(image.file.path)}: ${e.toString()}");
-      throw Exception("Error processing ${p.basename(image.file.path)}: ${e.toString()}");
+      throw Exception(
+        "Error processing ${p.basename(image.file.path)}: ${e.toString()}",
+      );
     }
   }
 
@@ -460,6 +566,7 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       _failedImages = [];
       _logMessages.value = []; // Clear previous logs.
       _finalStatusMessage.value = null;
+      _progressNotifier.value = 0.0;
     });
     for (var image in unprocessedImages) {
       setState(() {
@@ -469,11 +576,15 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
         await _processImage(image);
         setState(() {
           _processedCount++;
+          _progressNotifier.value =
+              _totalToProcess == 0 ? 0.0 : _processedCount / _totalToProcess;
         });
       } catch (e) {
         setState(() {
           _failedImages.add(p.basename(image.file.path));
           _processedCount++;
+          _progressNotifier.value =
+              _totalToProcess == 0 ? 0.0 : _processedCount / _totalToProcess;
         });
       }
     }
@@ -482,7 +593,9 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       _currentImageName = "";
     });
     if (_failedImages.isNotEmpty) {
-      _setFinalStatus("Processing complete with ${_failedImages.length} failures");
+      _setFinalStatus(
+        "Processing complete with ${_failedImages.length} failures",
+      );
     } else {
       _setFinalStatus("Processing complete successfully!");
     }
@@ -515,19 +628,23 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
         final data = jsonDecode(response.body);
         final imagesData = data['images'] as List;
         setState(() {
-          _images = imagesData.map<ImageItem>((img) {
-            final filePath = p.join(_currentDirectory!, img['path']);
-            return ImageItem(
-              File(filePath),
-              selected: false,
-              isProcessed: img['is_processed'] ?? false,
-              description: img['description'],
-              tags: img['tags'] != null ? List<String>.from(img['tags']) : [],
-              textContent: img['text_content'],
-            );
-          }).toList();
+          _images =
+              imagesData.map<ImageItem>((img) {
+                final filePath = p.join(_currentDirectory!, img['path']);
+                return ImageItem(
+                  File(filePath),
+                  selected: false,
+                  isProcessed: img['is_processed'] ?? false,
+                  description: img['description'],
+                  tags:
+                      img['tags'] != null ? List<String>.from(img['tags']) : [],
+                  textContent: img['text_content'],
+                );
+              }).toList();
         });
-        _appendLog("SUCCESS: Search successful, found ${_images.length} image(s)");
+        _appendLog(
+          "SUCCESS: Search successful, found ${_images.length} image(s)",
+        );
       } else {
         throw Exception("Error searching images: ${response.statusCode}");
       }
@@ -544,199 +661,205 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_currentDirectory != null 
-            ? "Images: ${p.basename(_currentDirectory!)}" 
-            : "Image Folder Browser"),
+        title: Text(
+          _currentDirectory != null
+              ? "Images: ${p.basename(_currentDirectory!)}"
+              : "Image Folder Browser",
+        ),
         actions: [
-          IconButton(
-            icon: Icon(Icons.folder_open),
-            onPressed: _pickFolder,
-          ),
+          IconButton(icon: Icon(Icons.folder_open), onPressed: _pickFolder),
         ],
       ),
-      body: _isLoading 
-          ? Center(child: CircularProgressIndicator())
-          : _images.isEmpty
+      body:
+          _isLoading
+              ? Center(child: CircularProgressIndicator())
+              : _images.isEmpty
               ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.photo_library_outlined, size: 64, color: Colors.grey),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.photo_library_outlined,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      _currentDirectory == null
+                          ? "Select a folder to view images"
+                          : "No images found in this folder",
+                      style: TextStyle(fontSize: 18, color: Colors.grey[700]),
+                    ),
+                    SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      icon: Icon(Icons.folder_open),
+                      label: Text("Select Folder"),
+                      onPressed: _pickFolder,
+                    ),
+                    if (_permissionPermanentlyDenied) ...[
                       SizedBox(height: 16),
                       Text(
-                        _currentDirectory == null
-                            ? "Select a folder to view images"
-                            : "No images found in this folder",
-                        style: TextStyle(fontSize: 18, color: Colors.grey[700]),
+                        "Storage permission was denied",
+                        style: TextStyle(color: Colors.red),
                       ),
-                      SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        icon: Icon(Icons.folder_open),
-                        label: Text("Select Folder"),
-                        onPressed: _pickFolder,
+                      TextButton(
+                        onPressed: _openAppSettings,
+                        child: Text("Open Settings"),
                       ),
-                      if (_permissionPermanentlyDenied) ...[
-                        SizedBox(height: 16),
-                        Text(
-                          "Storage permission was denied",
-                          style: TextStyle(color: Colors.red),
-                        ),
-                        TextButton(
-                          onPressed: _openAppSettings,
-                          child: Text("Open Settings"),
-                        )
-                      ]
                     ],
-                  ),
-                )
-              : Column(
-                  children: [
-                    // Top control row for search, refresh, process all and delete selected.
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Column(
-                        children: [
-                          if (_processingAll)
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Processing: $_currentImageName"),
-                                SizedBox(height: 4),
-                                LinearProgressIndicator(
-                                  value: _totalToProcess == 0 ? 0 : _processedCount / _totalToProcess,
-                                ),
-                                SizedBox(height: 4),
-                                Text("$_processedCount / $_totalToProcess processed"),
-                                if (_failedImages.isNotEmpty)
-                                  Text(
-                                    "Failed: ${_failedImages.length}",
-                                    style: TextStyle(color: Colors.red),
-                                  ),
-                                SizedBox(height: 8),
-                              ],
-                            ),
-                          Row(
-                            children: [
-                              // Search field
-                              Expanded(
-                                child: TextField(
-                                  decoration: InputDecoration(
-                                    hintText: "Search images...",
-                                    border: OutlineInputBorder(),
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                                  ),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _searchQuery = value;
-                                    });
-                                  },
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              // Search button (calls the /search endpoint)
-                              ElevatedButton(
-                                onPressed: _searchImages,
-                                child: Text("Search"),
-                              ),
-                              SizedBox(width: 8),
-                              // Refresh button
-                              IconButton(
-                                icon: Icon(Icons.refresh),
-                                onPressed: _refreshImages,
-                              ),
-                              SizedBox(width: 8),
-                              // Process All button
-                              ElevatedButton.icon(
-                                onPressed: _processingAll ? null : _processAllImages,
-                                icon: Icon(Icons.flash_on),
-                                label: Text("Process All"),
-                              ),
-                            ],
-                          ),
-                          // Row for Delete Selected and Select All checkbox.
-                          Row(
-                            children: [
-                              Checkbox(
-                                value: _selectAll,
-                                onChanged: _toggleSelectAll,
-                              ),
-                              Text("Select All"),
-                              Spacer(),
-                              if (_images.any((img) => img.selected))
-                                ElevatedButton.icon(
-                                  onPressed: _deleteSelectedImages,
-                                  icon: Icon(Icons.delete),
-                                  label: Text("Delete Selected (${_images.where((img) => img.selected).length})"),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Image grid
-                    Expanded(
-                      child: GridView.builder(
-                        padding: EdgeInsets.all(8),
-                        itemCount: _images.length,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 4,
-                          mainAxisSpacing: 4,
-                        ),
-                        itemBuilder: (context, index) {
-                          final imageItem = _images[index];
-                          return Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: Image.file(
-                                  imageItem.file, 
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      color: Colors.grey[300],
-                                      child: Icon(Icons.broken_image, color: Colors.red),
-                                    );
-                                  },
-                                ),
-                              ),
-                              // Checkbox overlay
-                              Positioned(
-                                top: 4,
-                                left: 4,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.black45,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Checkbox(
-                                    value: imageItem.selected,
-                                    onChanged: (value) {
-                                      int realIndex = _images.indexWhere((img) =>
-                                          p.equals(img.file.path, imageItem.file.path));
-                                      _toggleImageSelection(realIndex, value);
-                                    },
-                                    activeColor: Colors.blue,
-                                    checkColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              // Processed indicator
-                              if (imageItem.isProcessed)
-                                Positioned(
-                                  bottom: 4,
-                                  right: 4,
-                                  child: Icon(Icons.check_circle, color: Colors.green, size: 20),
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
                   ],
                 ),
+              )
+              : Column(
+                children: [
+                  // Top control area using Wrap for better responsiveness.
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Wrap(
+                      alignment: WrapAlignment.start,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        // Search text field.
+                        Container(
+                          width: 200,
+                          child: TextField(
+                            decoration: InputDecoration(
+                              hintText: "Search images...",
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 10,
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey[100],
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                _searchQuery = value;
+                              });
+                            },
+                          ),
+                        ),
+                        // Search button.
+                        ElevatedButton.icon(
+                          onPressed: _searchImages,
+                          icon: Icon(Icons.search),
+                          label: Text("Search"),
+                        ),
+                        // Refresh button.
+                        ElevatedButton.icon(
+                          onPressed: _refreshImages,
+                          icon: Icon(Icons.refresh),
+                          label: Text("Refresh"),
+                        ),
+                        // Process All button.
+                        ElevatedButton.icon(
+                          onPressed: _processingAll ? null : _processAllImages,
+                          icon: Icon(Icons.flash_on),
+                          label: Text("Process All"),
+                        ),
+                        // Select All checkbox and label.
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Checkbox(
+                              value: _selectAll,
+                              onChanged: _toggleSelectAll,
+                            ),
+                            Text("Select All"),
+                          ],
+                        ),
+                        // Delete Selected button (shown if any images are selected).
+                        if (_images.any((img) => img.selected))
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                            ),
+                            onPressed: _deleteSelectedImages,
+                            icon: Icon(Icons.delete),
+                            label: Text(
+                              "Delete Selected (${_images.where((img) => img.selected).length})",
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Image grid.
+                  Expanded(
+                    child: GridView.builder(
+                      padding: EdgeInsets.all(8),
+                      itemCount: _images.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 4,
+                        mainAxisSpacing: 4,
+                      ),
+                      itemBuilder: (context, index) {
+                        final imageItem = _images[index];
+                        return Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.file(
+                                imageItem.file,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.grey[300],
+                                    child: Icon(
+                                      Icons.broken_image,
+                                      color: Colors.red,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            // Checkbox overlay.
+                            Positioned(
+                              top: 4,
+                              left: 4,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black45,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Checkbox(
+                                  value: imageItem.selected,
+                                  onChanged: (value) {
+                                    int realIndex = _images.indexWhere(
+                                      (img) => p.equals(
+                                        img.file.path,
+                                        imageItem.file.path,
+                                      ),
+                                    );
+                                    _toggleImageSelection(realIndex, value);
+                                  },
+                                  activeColor: Colors.blue,
+                                  checkColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            // Processed indicator.
+                            if (imageItem.isProcessed)
+                              Positioned(
+                                bottom: 4,
+                                right: 4,
+                                child: Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green,
+                                  size: 20,
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
     );
   }
 }
