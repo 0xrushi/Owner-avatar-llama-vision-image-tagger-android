@@ -1,6 +1,11 @@
 # Trash Lens
 
+My phone gallery is a total mess—blurry pics, old memes, random screenshots I forgot about 😩 Have you dealt with this too?
+
 Trash Lens brings order to your image chaos—so you can focus on what matters and free up space effortlessly.
+
+### Demo video
+[Watch the demo video](https://odysee.com/@rushi:2/trash-lens:4)
 
 ## Usage
 
