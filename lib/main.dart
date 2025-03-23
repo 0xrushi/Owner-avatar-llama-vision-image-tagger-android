@@ -1,19 +1,33 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(MyApp());
 }
 
-/// A simple model to wrap each image file with a selection flag.
+/// Extended model to hold processing metadata.
 class ImageItem {
   final File file;
   bool selected;
-  ImageItem(this.file, {this.selected = false});
+  bool isProcessed;
+  String? description;
+  List<String>? tags;
+  String? textContent;
+
+  ImageItem(
+    this.file, {
+    this.selected = false,
+    this.isProcessed = false,
+    this.description,
+    this.tags,
+    this.textContent,
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -42,7 +56,25 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
   bool _isLoading = false;
   int _androidVersion = 0;
   bool _selectAll = false;
-  
+
+  // State for search and processing
+  String _searchQuery = "";
+  bool _processingAll = false;
+  int _processedCount = 0;
+  int _totalToProcess = 0;
+  String _currentImageName = "";
+  List<String> _failedImages = [];
+
+  // Log management using ValueNotifiers.
+  final ValueNotifier<List<String>> _logMessages = ValueNotifier([]);
+  final ValueNotifier<String?> _finalStatusMessage = ValueNotifier(null);
+  bool _isLogDialogOpen = false;
+
+  // Update these with your API base URL and endpoints.
+  static const String API_BASE_URL = "http://10.0.0.175:8000";
+  static const String PROCESS_API_URL = "$API_BASE_URL/process-image";
+  static const String SEARCH_API_URL = "$API_BASE_URL/search";
+
   @override
   void initState() {
     super.initState();
@@ -69,8 +101,7 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
 
   Future<bool> _requestPermissions() async {
     if (!Platform.isAndroid) return true;
-
-    if (1==2) {
+    if (1 == 2) {
       var status = await Permission.storage.status;
       if (status.isGranted) return true;
       final newStatus = await Permission.storage.request();
@@ -97,9 +128,113 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
     await openAppSettings();
   }
 
+  /// Opens the persistent log dialog if not already open.
+  void _openLogDialog() {
+    if (_isLogDialogOpen) return; // Already open.
+    _isLogDialogOpen = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false, // force user to use close button
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.black.withOpacity(0.85),
+          insetPadding: EdgeInsets.all(16),
+          child: Container(
+            width: double.infinity,
+            height: 300,
+            child: Column(
+              children: [
+                // Title bar with "Log" and close button.
+                Container(
+                  color: Colors.black87,
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Log Terminal",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'Courier',
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.close, color: Colors.white),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _isLogDialogOpen = false;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                // Scrollable log messages.
+                Expanded(
+                  child: Container(
+                    padding: EdgeInsets.all(8),
+                    child: Scrollbar(
+                      child: SingleChildScrollView(
+                        child: ValueListenableBuilder<List<String>>(
+                          valueListenable: _logMessages,
+                          builder: (context, logs, child) {
+                            return Text(
+                              logs.join("\n"),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontFamily: 'Courier',
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Final status message area.
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.all(8),
+                  color: Colors.black54,
+                  child: ValueListenableBuilder<String?>(
+                    valueListenable: _finalStatusMessage,
+                    builder: (context, finalMsg, child) {
+                      return Text(
+                        finalMsg ?? "",
+                        style: TextStyle(
+                          color: finalMsg != null && finalMsg.contains("ERROR")
+                              ? Colors.redAccent
+                              : Colors.greenAccent,
+                          fontFamily: 'Courier',
+                          fontWeight: FontWeight.bold,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ).then((_) {
+      // When the dialog is closed, clear logs if needed.
+      _isLogDialogOpen = false;
+    });
+  }
+
+  /// Appends a log message to the terminal.
+  void _appendLog(String message) {
+    _logMessages.value = List.from(_logMessages.value)..add(message);
+  }
+
+  /// Sets the final status message.
+  void _setFinalStatus(String message) {
+    _finalStatusMessage.value = message;
+  }
+
   Future<void> _pickFolder() async {
     bool hasPermission = await _requestPermissions();
-    
     if (!hasPermission) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -114,13 +249,10 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       );
       return;
     }
-
     try {
-      // For older Android versions, use a custom directory selection approach
       if (Platform.isAndroid && _androidVersion < 11) {
         await _showDirectoryPicker();
       } else {
-        // Use file_selector for newer Android versions and other platforms
         String? selectedDirectory = await getDirectoryPath();
         if (selectedDirectory != null) {
           _currentDirectory = selectedDirectory;
@@ -135,17 +267,13 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
   }
 
   Future<void> _showDirectoryPicker() async {
-    // A simple directory picker for older Android versions.
     List<Directory> storageDirectories = [];
-    
     try {
       storageDirectories = await getExternalStorageDirectories() ?? [];
     } catch (e) {
       final appDocDir = await getApplicationDocumentsDirectory();
       storageDirectories.add(appDocDir);
     }
-    
-    // Try to add common directories like DCIM, Pictures, and Download
     try {
       if (await Directory('/storage/emulated/0/DCIM').exists()) {
         storageDirectories.add(Directory('/storage/emulated/0/DCIM'));
@@ -157,9 +285,8 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
         storageDirectories.add(Directory('/storage/emulated/0/Download'));
       }
     } catch (e) {
-      // Ignore if these directories aren't accessible
+      // Ignore if inaccessible.
     }
-    
     final selectedDir = await showModalBottomSheet<Directory>(
       context: context,
       builder: (BuildContext context) {
@@ -183,7 +310,6 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                     if (displayName.isEmpty) {
                       displayName = dir.path;
                     }
-                    
                     return ListTile(
                       leading: Icon(Icons.folder),
                       title: Text(displayName),
@@ -200,7 +326,6 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
         );
       },
     );
-    
     if (selectedDir != null) {
       _currentDirectory = selectedDir.path;
       await _loadImagesFromDirectory(selectedDir.path);
@@ -210,24 +335,21 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
   Future<void> _loadImagesFromDirectory(String directoryPath) async {
     setState(() {
       _isLoading = true;
-      _selectAll = false; // reset select all
+      _selectAll = false;
+      _searchQuery = "";
     });
-    
     try {
       final dir = Directory(directoryPath);
       final List<ImageItem> imageItems = [];
-      
       await for (var entity in dir.list()) {
         if (entity is File && _isImage(entity.path)) {
           imageItems.add(ImageItem(entity));
         }
       }
-
       setState(() {
         _images = imageItems;
         _isLoading = false;
       });
-      
       if (imageItems.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("No images found in this folder")),
@@ -237,7 +359,6 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       setState(() {
         _isLoading = false;
       });
-      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error loading images: ${e.toString()}")),
       );
@@ -249,11 +370,9 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
     return ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'].contains(ext);
   }
 
-  /// Deletes all images that have been selected.
   Future<void> _deleteSelectedImages() async {
     final selectedItems = _images.where((img) => img.selected).toList();
     if (selectedItems.isEmpty) return;
-
     bool confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -265,9 +384,7 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
         ],
       ),
     ) ?? false;
-
     if (!confirmed) return;
-
     for (var image in selectedItems) {
       try {
         await image.file.delete();
@@ -277,18 +394,13 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
         );
       }
     }
-
     setState(() {
       _images.removeWhere((img) => img.selected);
       _selectAll = false;
     });
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Selected images deleted")),
-    );
+    _appendLog("SUCCESS: Selected images deleted");
   }
 
-  /// Toggle select all functionality.
   void _toggleSelectAll(bool? value) {
     setState(() {
       _selectAll = value ?? false;
@@ -298,13 +410,134 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
     });
   }
 
-  /// When an individual image checkbox is toggled, update its state and check if all images are selected.
   void _toggleImageSelection(int index, bool? value) {
     setState(() {
       _images[index].selected = value ?? false;
-      // Update select all checkbox if needed.
       _selectAll = _images.every((img) => img.selected);
     });
+  }
+
+  Future<void> _processImage(ImageItem image) async {
+    try {
+      _openLogDialog();
+      _appendLog("Processing ${p.basename(image.file.path)}...");
+      var uri = Uri.parse(PROCESS_API_URL);
+      var request = http.MultipartRequest('POST', uri);
+      request.files.add(await http.MultipartFile.fromPath('image', image.file.path));
+      var streamedResponse = await request.send();
+      if (streamedResponse.statusCode == 200) {
+        final respStr = await streamedResponse.stream.bytesToString();
+        final data = json.decode(respStr);
+        setState(() {
+          image.description = data['description'];
+          image.tags = data['tags'] != null ? List<String>.from(data['tags']) : [];
+          image.textContent = data['text_content'];
+          image.isProcessed = data['is_processed'] ?? true;
+        });
+        _appendLog("SUCCESS: Processed ${p.basename(image.file.path)} successfully");
+      } else {
+        throw Exception("Processing failed (status ${streamedResponse.statusCode})");
+      }
+    } catch (e) {
+      _appendLog("ERROR: ${p.basename(image.file.path)}: ${e.toString()}");
+      throw Exception("Error processing ${p.basename(image.file.path)}: ${e.toString()}");
+    }
+  }
+
+  Future<void> _processAllImages() async {
+    final unprocessedImages = _images.where((img) => !img.isProcessed).toList();
+    if (unprocessedImages.isEmpty) {
+      _openLogDialog();
+      _appendLog("ERROR: No unprocessed images found!");
+      return;
+    }
+    _openLogDialog();
+    setState(() {
+      _processingAll = true;
+      _currentImageName = "";
+      _processedCount = 0;
+      _totalToProcess = unprocessedImages.length;
+      _failedImages = [];
+      _logMessages.value = []; // Clear previous logs.
+      _finalStatusMessage.value = null;
+    });
+    for (var image in unprocessedImages) {
+      setState(() {
+        _currentImageName = p.basename(image.file.path);
+      });
+      try {
+        await _processImage(image);
+        setState(() {
+          _processedCount++;
+        });
+      } catch (e) {
+        setState(() {
+          _failedImages.add(p.basename(image.file.path));
+          _processedCount++;
+        });
+      }
+    }
+    setState(() {
+      _processingAll = false;
+      _currentImageName = "";
+    });
+    if (_failedImages.isNotEmpty) {
+      _setFinalStatus("Processing complete with ${_failedImages.length} failures");
+    } else {
+      _setFinalStatus("Processing complete successfully!");
+    }
+  }
+
+  Future<void> _refreshImages() async {
+    if (_currentDirectory != null) {
+      await _loadImagesFromDirectory(_currentDirectory!);
+      _appendLog("SUCCESS: Images refreshed");
+    }
+  }
+
+  Future<void> _searchImages() async {
+    if (_searchQuery.isEmpty) {
+      await _refreshImages();
+      return;
+    }
+    try {
+      _openLogDialog();
+      _appendLog("Searching for '$_searchQuery'...");
+      setState(() {
+        _isLoading = true;
+      });
+      final response = await http.post(
+        Uri.parse(SEARCH_API_URL),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"query": _searchQuery}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final imagesData = data['images'] as List;
+        setState(() {
+          _images = imagesData.map<ImageItem>((img) {
+            final filePath = p.join(_currentDirectory!, img['path']);
+            return ImageItem(
+              File(filePath),
+              selected: false,
+              isProcessed: img['is_processed'] ?? false,
+              description: img['description'],
+              tags: img['tags'] != null ? List<String>.from(img['tags']) : [],
+              textContent: img['text_content'],
+            );
+          }).toList();
+        });
+        _appendLog("SUCCESS: Search successful, found ${_images.length} image(s)");
+      } else {
+        throw Exception("Error searching images: ${response.statusCode}");
+      }
+    } catch (e) {
+      _appendLog("ERROR: Search failed: ${e.toString()}");
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -358,23 +591,86 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                 )
               : Column(
                   children: [
-                    // Select All and Delete Selected controls
+                    // Top control row for search, refresh, process all and delete selected.
                     Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Row(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Column(
                         children: [
-                          Checkbox(
-                            value: _selectAll,
-                            onChanged: _toggleSelectAll,
-                          ),
-                          Text("Select All"),
-                          Spacer(),
-                          if (_images.any((img) => img.selected))
-                            ElevatedButton.icon(
-                              onPressed: _deleteSelectedImages,
-                              icon: Icon(Icons.delete),
-                              label: Text("Delete Selected (${_images.where((img) => img.selected).length})"),
+                          if (_processingAll)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("Processing: $_currentImageName"),
+                                SizedBox(height: 4),
+                                LinearProgressIndicator(
+                                  value: _totalToProcess == 0 ? 0 : _processedCount / _totalToProcess,
+                                ),
+                                SizedBox(height: 4),
+                                Text("$_processedCount / $_totalToProcess processed"),
+                                if (_failedImages.isNotEmpty)
+                                  Text(
+                                    "Failed: ${_failedImages.length}",
+                                    style: TextStyle(color: Colors.red),
+                                  ),
+                                SizedBox(height: 8),
+                              ],
                             ),
+                          Row(
+                            children: [
+                              // Search field
+                              Expanded(
+                                child: TextField(
+                                  decoration: InputDecoration(
+                                    hintText: "Search images...",
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                  ),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _searchQuery = value;
+                                    });
+                                  },
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              // Search button (calls the /search endpoint)
+                              ElevatedButton(
+                                onPressed: _searchImages,
+                                child: Text("Search"),
+                              ),
+                              SizedBox(width: 8),
+                              // Refresh button
+                              IconButton(
+                                icon: Icon(Icons.refresh),
+                                onPressed: _refreshImages,
+                              ),
+                              SizedBox(width: 8),
+                              // Process All button
+                              ElevatedButton.icon(
+                                onPressed: _processingAll ? null : _processAllImages,
+                                icon: Icon(Icons.flash_on),
+                                label: Text("Process All"),
+                              ),
+                            ],
+                          ),
+                          // Row for Delete Selected and Select All checkbox.
+                          Row(
+                            children: [
+                              Checkbox(
+                                value: _selectAll,
+                                onChanged: _toggleSelectAll,
+                              ),
+                              Text("Select All"),
+                              Spacer(),
+                              if (_images.any((img) => img.selected))
+                                ElevatedButton.icon(
+                                  onPressed: _deleteSelectedImages,
+                                  icon: Icon(Icons.delete),
+                                  label: Text("Delete Selected (${_images.where((img) => img.selected).length})"),
+                                ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -406,7 +702,7 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                                   },
                                 ),
                               ),
-                              // Checkbox overlay in the top-left corner.
+                              // Checkbox overlay
                               Positioned(
                                 top: 4,
                                 left: 4,
@@ -417,12 +713,23 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                                   ),
                                   child: Checkbox(
                                     value: imageItem.selected,
-                                    onChanged: (value) => _toggleImageSelection(index, value),
+                                    onChanged: (value) {
+                                      int realIndex = _images.indexWhere((img) =>
+                                          p.equals(img.file.path, imageItem.file.path));
+                                      _toggleImageSelection(realIndex, value);
+                                    },
                                     activeColor: Colors.blue,
                                     checkColor: Colors.white,
                                   ),
                                 ),
                               ),
+                              // Processed indicator
+                              if (imageItem.isProcessed)
+                                Positioned(
+                                  bottom: 4,
+                                  right: 4,
+                                  child: Icon(Icons.check_circle, color: Colors.green, size: 20),
+                                ),
                             ],
                           );
                         },
