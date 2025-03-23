@@ -2,7 +2,7 @@
 
 ## My phone gallery is a total mess—blurry pics, old memes, random screenshots I forgot about 😩 Have you dealt with this too?
 
-### Trash Lens brings order to your image chaos—so you can focus on what matters and free up space effortlessly.
+### Trash Lens brings order to your image chaos—so you can focus on what matters and free up space effortlessly. Powered by open-source vision models and fully self-hostable, Trash Lens gives you smart, private control over your photo library.
 ### [Watch the demo video](https://odysee.com/@rushi:2/trash-lens:4)
 
 ![image](https://github.com/user-attachments/assets/21330817-6eef-4acf-b020-fd5dbb83d4b7)
