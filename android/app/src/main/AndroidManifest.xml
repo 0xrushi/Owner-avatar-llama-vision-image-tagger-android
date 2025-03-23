@@ -9,7 +9,7 @@
     android:maxSdkVersion="28" />
 
     <application
-        android:label="trash_lens"
+        android:label="Trash Lens"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
         android:requestLegacyExternalStorage="true">

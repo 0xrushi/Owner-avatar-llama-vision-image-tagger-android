@@ -205,25 +205,32 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                         ValueListenableBuilder<double>(
                           valueListenable: _progressNotifier,
                           builder: (context, progress, child) {
-                            return LinearProgressIndicator(
-                              value: progress,
-                              backgroundColor: Colors.grey[700],
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                LinearProgressIndicator(
+                                  value: progress,
+                                  backgroundColor: Colors.grey[700],
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  "$_processedCount / $_totalToProcess processed",
+                                  style: TextStyle(color: Colors.white60),
+                                ),
+                                if (_failedImages.isNotEmpty)
+                                  Text(
+                                    "Failed: ${_failedImages.length}",
+                                    style: TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                              ],
                             );
                           },
                         ),
+
                         SizedBox(height: 4),
-                        Text(
-                          "$_processedCount / $_totalToProcess processed",
-                          style: TextStyle(color: Colors.white60),
-                        ),
-                        if (_failedImages.isNotEmpty)
-                          Text(
-                            "Failed: ${_failedImages.length}",
-                            style: TextStyle(
-                              color: Colors.redAccent,
-                              fontSize: 16,
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -244,17 +251,18 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
                           builder: (context, logs, child) {
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: logs
-                                  .map(
-                                    (log) => Text(
-                                      log,
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontFamily: 'Courier',
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
+                              children:
+                                  logs
+                                      .map(
+                                        (log) => Text(
+                                          log,
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontFamily: 'Courier',
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
                             );
                           },
                         ),
@@ -317,12 +325,13 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Storage permission required"),
-          action: _permissionPermanentlyDenied
-              ? SnackBarAction(
-                  label: 'SETTINGS',
-                  onPressed: _openAppSettings,
-                )
-              : null,
+          action:
+              _permissionPermanentlyDenied
+                  ? SnackBarAction(
+                    label: 'SETTINGS',
+                    onPressed: _openAppSettings,
+                  )
+                  : null,
         ),
       );
       return;
@@ -455,24 +464,26 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
   Future<void> _deleteSelectedImages() async {
     final selectedItems = _images.where((img) => img.selected).toList();
     if (selectedItems.isEmpty) return;
-    bool confirmed = await showDialog<bool>(
+    bool confirmed =
+        await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: Text("Confirm Deletion"),
-            content: Text(
-              "Are you sure you want to delete ${selectedItems.length} selected image(s)?",
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text("Cancel"),
+          builder:
+              (context) => AlertDialog(
+                title: Text("Confirm Deletion"),
+                content: Text(
+                  "Are you sure you want to delete ${selectedItems.length} selected image(s)?",
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: Text("Cancel"),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: Text("Delete"),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text("Delete"),
-              ),
-            ],
-          ),
         ) ??
         false;
     if (!confirmed) return;
@@ -548,11 +559,13 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
 
   Future<void> _processAllImages() async {
     final unprocessedImages = _images.where((img) => !img.isProcessed).toList();
+
     if (unprocessedImages.isEmpty) {
       _openLogDialog();
       _appendLog("ERROR: No unprocessed images found!");
       return;
     }
+
     _openLogDialog();
     setState(() {
       _processingAll = true;
@@ -560,34 +573,36 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
       _processedCount = 0;
       _totalToProcess = unprocessedImages.length;
       _failedImages = [];
-      _logMessages.value = []; // Clear previous logs.
+      _logMessages.value = [];
       _finalStatusMessage.value = null;
       _progressNotifier.value = 0.0;
     });
+
     for (var image in unprocessedImages) {
       setState(() {
         _currentImageName = p.basename(image.file.path);
       });
+
       try {
         await _processImage(image);
-        setState(() {
-          _processedCount++;
-          _progressNotifier.value =
-              _totalToProcess == 0 ? 0.0 : _processedCount / _totalToProcess;
-        });
       } catch (e) {
+        _appendLog("ERROR: ${p.basename(image.file.path)} failed: $e");
+        _failedImages.add(p.basename(image.file.path));
+      } finally {
         setState(() {
-          _failedImages.add(p.basename(image.file.path));
+          image.isProcessed = false;
           _processedCount++;
           _progressNotifier.value =
               _totalToProcess == 0 ? 0.0 : _processedCount / _totalToProcess;
         });
       }
     }
+
     setState(() {
       _processingAll = false;
       _currentImageName = "";
     });
+
     if (_failedImages.isNotEmpty) {
       _setFinalStatus(
         "Processing complete with ${_failedImages.length} failures",
@@ -624,17 +639,19 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
         final data = jsonDecode(response.body);
         final imagesData = data['images'] as List;
         setState(() {
-          _images = imagesData.map<ImageItem>((img) {
-            final filePath = p.join(_currentDirectory!, img['path']);
-            return ImageItem(
-              File(filePath),
-              selected: false,
-              isProcessed: img['is_processed'] ?? false,
-              description: img['description'],
-              tags: img['tags'] != null ? List<String>.from(img['tags']) : [],
-              textContent: img['text_content'],
-            );
-          }).toList();
+          _images =
+              imagesData.map<ImageItem>((img) {
+                final filePath = p.join(_currentDirectory!, img['path']);
+                return ImageItem(
+                  File(filePath),
+                  selected: false,
+                  isProcessed: img['is_processed'] ?? false,
+                  description: img['description'],
+                  tags:
+                      img['tags'] != null ? List<String>.from(img['tags']) : [],
+                  textContent: img['text_content'],
+                );
+              }).toList();
         });
         _appendLog(
           "SUCCESS: Search successful, found ${_images.length} image(s)",
@@ -701,198 +718,196 @@ class _ImageFolderScreenState extends State<ImageFolderScreen> {
           ],
         ),
       ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator())
-          : _images.isEmpty
+      body:
+          _isLoading
+              ? Center(child: CircularProgressIndicator())
+              : _images.isEmpty
               ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.photo_library_outlined,
-                        size: 64,
-                        color: Colors.grey,
-                      ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.photo_library_outlined,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      _currentDirectory == null
+                          ? "Select a folder to view images"
+                          : "No images found in this folder",
+                      style: TextStyle(fontSize: 18, color: Colors.grey[700]),
+                    ),
+                    SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      icon: Icon(Icons.folder_open),
+                      label: Text("Select Folder"),
+                      onPressed: _pickFolder,
+                    ),
+                    if (_permissionPermanentlyDenied) ...[
                       SizedBox(height: 16),
                       Text(
-                        _currentDirectory == null
-                            ? "Select a folder to view images"
-                            : "No images found in this folder",
-                        style:
-                            TextStyle(fontSize: 18, color: Colors.grey[700]),
+                        "Storage permission was denied",
+                        style: TextStyle(color: Colors.red),
                       ),
-                      SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        icon: Icon(Icons.folder_open),
-                        label: Text("Select Folder"),
-                        onPressed: _pickFolder,
+                      TextButton(
+                        onPressed: _openAppSettings,
+                        child: Text("Open Settings"),
                       ),
-                      if (_permissionPermanentlyDenied) ...[
-                        SizedBox(height: 16),
-                        Text(
-                          "Storage permission was denied",
-                          style: TextStyle(color: Colors.red),
-                        ),
-                        TextButton(
-                          onPressed: _openAppSettings,
-                          child: Text("Open Settings"),
-                        ),
-                      ],
                     ],
-                  ),
-                )
-              : Column(
-                  children: [
-                    // Top control area.
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Wrap(
-                        alignment: WrapAlignment.start,
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          // Search text field.
-                          Container(
-                            width: 200,
-                            child: TextField(
-                              decoration: InputDecoration(
-                                hintText: "Search images...",
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 10,
-                                ),
-                                filled: true,
-                                fillColor: Colors.grey[100],
-                              ),
-                              onChanged: (value) {
-                                setState(() {
-                                  _searchQuery = value;
-                                });
-                              },
-                            ),
-                          ),
-                          // Search button.
-                          ElevatedButton.icon(
-                            onPressed: _searchImages,
-                            icon: Icon(Icons.search),
-                            label: Text("Search"),
-                          ),
-                          // Refresh button.
-                          ElevatedButton.icon(
-                            onPressed: _refreshImages,
-                            icon: Icon(Icons.refresh),
-                            label: Text("Refresh"),
-                          ),
-                          // Process All button.
-                          ElevatedButton.icon(
-                            onPressed:
-                                _processingAll ? null : _processAllImages,
-                            icon: Icon(Icons.flash_on),
-                            label: Text("Process All"),
-                          ),
-                          // Select All checkbox.
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Checkbox(
-                                value: _selectAll,
-                                onChanged: _toggleSelectAll,
-                              ),
-                              Text("Select All"),
-                            ],
-                          ),
-                          // Delete Selected button.
-                          if (_images.any((img) => img.selected))
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.redAccent,
-                              ),
-                              onPressed: _deleteSelectedImages,
-                              icon: Icon(Icons.delete),
-                              label: Text(
-                                "Delete Selected (${_images.where((img) => img.selected).length})",
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    // Image grid.
-                    Expanded(
-                      child: GridView.builder(
-                        padding: EdgeInsets.all(8),
-                        itemCount: _images.length,
-                        gridDelegate:
-                            SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 4,
-                          mainAxisSpacing: 4,
-                        ),
-                        itemBuilder: (context, index) {
-                          final imageItem = _images[index];
-                          return Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: Image.file(
-                                  imageItem.file,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      color: Colors.grey[300],
-                                      child: Icon(
-                                        Icons.broken_image,
-                                        color: Colors.red,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              // Checkbox overlay.
-                              Positioned(
-                                top: 4,
-                                left: 4,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.black45,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Checkbox(
-                                    value: imageItem.selected,
-                                    onChanged: (value) {
-                                      int realIndex = _images.indexWhere(
-                                        (img) => p.equals(
-                                          img.file.path,
-                                          imageItem.file.path,
-                                        ),
-                                      );
-                                      _toggleImageSelection(realIndex, value);
-                                    },
-                                    activeColor: Colors.blue,
-                                    checkColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              // Processed indicator.
-                              if (imageItem.isProcessed)
-                                Positioned(
-                                  bottom: 4,
-                                  right: 4,
-                                  child: Icon(
-                                    Icons.check_circle,
-                                    color: Colors.green,
-                                    size: 20,
-                                  ),
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
                   ],
                 ),
+              )
+              : Column(
+                children: [
+                  // Top control area.
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Wrap(
+                      alignment: WrapAlignment.start,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        // Search text field.
+                        Container(
+                          width: 200,
+                          child: TextField(
+                            decoration: InputDecoration(
+                              hintText: "Search images...",
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 10,
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey[100],
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                _searchQuery = value;
+                              });
+                            },
+                          ),
+                        ),
+                        // Search button.
+                        ElevatedButton.icon(
+                          onPressed: _searchImages,
+                          icon: Icon(Icons.search),
+                          label: Text("Search"),
+                        ),
+                        // Refresh button.
+                        ElevatedButton.icon(
+                          onPressed: _refreshImages,
+                          icon: Icon(Icons.refresh),
+                          label: Text("Refresh"),
+                        ),
+                        // Process All button.
+                        ElevatedButton.icon(
+                          onPressed: _processingAll ? null : _processAllImages,
+                          icon: Icon(Icons.flash_on),
+                          label: Text("Process All"),
+                        ),
+                        // Select All checkbox.
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Checkbox(
+                              value: _selectAll,
+                              onChanged: _toggleSelectAll,
+                            ),
+                            Text("Select All"),
+                          ],
+                        ),
+                        // Delete Selected button.
+                        if (_images.any((img) => img.selected))
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                            ),
+                            onPressed: _deleteSelectedImages,
+                            icon: Icon(Icons.delete),
+                            label: Text(
+                              "Delete Selected (${_images.where((img) => img.selected).length})",
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Image grid.
+                  Expanded(
+                    child: GridView.builder(
+                      padding: EdgeInsets.all(8),
+                      itemCount: _images.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 4,
+                        mainAxisSpacing: 4,
+                      ),
+                      itemBuilder: (context, index) {
+                        final imageItem = _images[index];
+                        return Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.file(
+                                imageItem.file,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.grey[300],
+                                    child: Icon(
+                                      Icons.broken_image,
+                                      color: Colors.red,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            // Checkbox overlay.
+                            Positioned(
+                              top: 4,
+                              left: 4,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black45,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Checkbox(
+                                  value: imageItem.selected,
+                                  onChanged: (value) {
+                                    int realIndex = _images.indexWhere(
+                                      (img) => p.equals(
+                                        img.file.path,
+                                        imageItem.file.path,
+                                      ),
+                                    );
+                                    _toggleImageSelection(realIndex, value);
+                                  },
+                                  activeColor: Colors.blue,
+                                  checkColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            // Processed indicator.
+                            if (imageItem.isProcessed)
+                              Positioned(
+                                bottom: 4,
+                                right: 4,
+                                child: Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green,
+                                  size: 20,
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
     );
   }
 }
@@ -923,14 +938,16 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("API is working!")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("API is working!")));
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content:
-                  Text("API test failed with status: ${response.statusCode}")),
+            content: Text(
+              "API test failed with status: ${response.statusCode}",
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -951,9 +968,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text("API Settings"),
-      ),
+      appBar: AppBar(title: Text("API Settings")),
       body: Padding(
         padding: EdgeInsets.all(16),
         child: Column(
@@ -970,17 +985,15 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 ElevatedButton(
                   onPressed: _isTesting ? null : _testApi,
-                  child: _isTesting
-                      ? CircularProgressIndicator()
-                      : Text("Test API"),
+                  child:
+                      _isTesting
+                          ? CircularProgressIndicator()
+                          : Text("Test API"),
                 ),
                 SizedBox(width: 16),
-                ElevatedButton(
-                  onPressed: _saveSettings,
-                  child: Text("Save"),
-                ),
+                ElevatedButton(onPressed: _saveSettings, child: Text("Save")),
               ],
-            )
+            ),
           ],
         ),
       ),
