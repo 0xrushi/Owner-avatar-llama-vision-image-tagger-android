@@ -1,13 +1,23 @@
 # Trash Lens
 
-My phone gallery is a total mess—blurry pics, old memes, random screenshots I forgot about 😩 Have you dealt with this too?
+## My phone gallery is a total mess; blurry pics, old memes, random screenshots I forgot about 😩 Have you dealt with this too?
 
-Trash Lens brings order to your image chaos—so you can focus on what matters and free up space effortlessly.
+### Trash Lens brings order to your image chaos—so you can focus on what matters and free up space effortlessly. Powered by open-source vision models and fully self-hostable, Trash Lens gives you smart, private control over your photo library.
+### [Watch the demo video](https://odysee.com/@rushi:2/trash-lens:4)
 
-### Demo video
-[Watch the demo video](https://odysee.com/@rushi:2/trash-lens:4)
+![image](https://github.com/user-attachments/assets/21330817-6eef-4acf-b020-fd5dbb83d4b7)
 
-## Usage
+---
+
+## ⚙️ System Requirements
+
+- **A local GPU with at least 16GB of VRAM is required.**
+- The backend is **designed to run on a single GPU**, so all requests are **processed sequentially**.
+- For optimal performance (especially in a cloud environment), the system **should be refactored to support async request handling.**
+
+---
+
+## 🚀 Usage
 
 ### Step 1: Set up the Backend
 
